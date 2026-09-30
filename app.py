@@ -1,6 +1,7 @@
 import html
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pandas as pd
 import streamlit as st
@@ -21,7 +22,7 @@ st.set_page_config(
 
 # Looks for the dataset next to this file (your Scholarsync folder).
 # The first file that exists in this list is used.
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent
 _CANDIDATES = [
     "scholarships_final_v2.csv",
     "Scholarships_final.csv",
@@ -46,7 +47,9 @@ PASTELS = ["lav", "mint", "peach", "butter", "sky", "pink"]
 
 @st.cache_data
 def load_data():
-    return pd.read_csv(DATA_PATH)
+    data = pd.read_csv(DATA_PATH)
+    data.columns = data.columns.astype(str).str.strip()
+    return data
 
 
 df = load_data()
@@ -87,6 +90,90 @@ def link_btn(label: str, url: str, key: str):
         st.link_button(label, url, key=key)
     except TypeError:
         st.link_button(label, url)
+
+
+# ---------- official links (display only, never used for eligibility) ----------
+
+# If True, a scholarship with no `official_website` falls back to the existing
+# `official_url` column (real links already in your CSV). Set to False to use
+# only the new `official_website` column.
+USE_OFFICIAL_URL_FALLBACK = True
+
+_NOT_A_URL = {"", "nan", "none", "null", "nat", "n/a", "na", "-", "not specified"}
+
+
+def is_valid_url(url) -> bool:
+    """True only for a real http(s) URL. Never raises."""
+    try:
+        if url is None or (not isinstance(url, str) and pd.isna(url)):
+            return False
+        text = str(url).strip()
+        if text.lower() in _NOT_A_URL or any(ch.isspace() for ch in text):
+            return False
+        parsed = urlparse(text)
+        return parsed.scheme in ("http", "https") and bool(parsed.hostname) and "." in parsed.hostname
+    except Exception:
+        return False
+
+
+def _link_lookup(data: pd.DataFrame) -> dict:
+    """scholarship_id -> row values, so links can be found even if the result rows lack them."""
+    if "scholarship_id" not in data.columns:
+        return {}
+    return {str(k).strip(): rec for k, rec in zip(data["scholarship_id"], data.to_dict("records"))}
+
+
+LINK_LOOKUP = _link_lookup(df)
+
+
+def get_scholarship_links(row):
+    """Return (official_website, application_link); each is a valid URL or None."""
+    sources = [row]
+    try:
+        rec = LINK_LOOKUP.get(str(row.get("scholarship_id")).strip())
+        if rec is not None:
+            sources.append(rec)
+    except Exception:
+        pass
+
+    def first_valid(column):
+        for source in sources:
+            try:
+                value = source.get(column)
+            except Exception:
+                continue
+            if is_valid_url(value):
+                return str(value).strip()
+        return None
+
+    website = first_valid("official_website")
+    if website is None and USE_OFFICIAL_URL_FALLBACK:
+        website = first_valid("official_url")
+
+    return website, first_valid("application_link")
+
+
+def render_link_buttons(row, key_prefix: str):
+    """Official website / Apply buttons for one scholarship. Missing links are skipped."""
+    website, apply_url = get_scholarship_links(row)
+
+    # Same URL for both? Show a single Apply button instead of two identical ones.
+    if website and apply_url and website.rstrip("/") == apply_url.rstrip("/"):
+        website = None
+
+    if website and apply_url:
+        col_site, col_apply = st.columns(2)
+        with col_site:
+            link_btn("View Official Website", website, key=f"{key_prefix}_site")
+        with col_apply:
+            link_btn("Apply / Register \u2192", apply_url, key=f"{key_prefix}_apply")
+    elif website:
+        link_btn("View Official Website", website, key=f"{key_prefix}_site")
+        st.caption("Application link not available.")
+    elif apply_url:
+        link_btn("Apply / Register \u2192", apply_url, key=f"{key_prefix}_apply")
+    else:
+        st.caption("Official application link not available.")
 
 
 def go_find():
@@ -807,10 +894,7 @@ elif page == "Find Scholarships":
                                 """
                             )
 
-                    url = str(row["official_url"])
-
-                    if url.startswith("http"):
-                        link_btn("Open official source", url, key=f"open_{i}")
+                    render_link_buttons(row, key_prefix=f"match_{i}")
 
 
 # ============================================================
