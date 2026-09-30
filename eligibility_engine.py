@@ -1,14 +1,67 @@
 import pandas as pd
-import re
+from pathlib import Path
 
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
+# =========================================================
+# FIND PROJECT DIRECTORY
+# =========================================================
 
-FILE_PATH = r"C:\Users\diyac\Desktop\Scholarsync\scholarships_standardized.csv"
+BASE_DIR = Path(__file__).resolve().parent
+
+
+# =========================================================
+# FIND SCHOLARSHIP CSV
+# =========================================================
+
+possible_files = [
+    BASE_DIR / "Scholarships_final.csv",
+    BASE_DIR / "scholarships_final.csv",
+    BASE_DIR / "scholarship_final.csv",
+    BASE_DIR / "Data" / "Scholarships_final.csv",
+    BASE_DIR / "Data" / "scholarships_final.csv",
+    BASE_DIR / "Data" / "scholarship_final.csv",
+]
+
+
+FILE_PATH = None
+
+for file in possible_files:
+    if file.exists():
+        FILE_PATH = file
+        break
+
+
+# Also search inside the project if the above paths don't work
+if FILE_PATH is None:
+    for file in BASE_DIR.rglob("*.csv"):
+        if file.name.lower() in [
+            "scholarships_final.csv",
+            "scholarship_final.csv"
+        ]:
+            FILE_PATH = file
+            break
+
+
+# =========================================================
+# ERROR IF CSV NOT FOUND
+# =========================================================
+
+if FILE_PATH is None:
+    raise FileNotFoundError(
+        "Scholarship dataset could not be found. "
+        "Make sure Scholarships_final.csv is uploaded to GitHub."
+    )
+
+
+# =========================================================
+# LOAD DATASET
+# =========================================================
 
 df = pd.read_csv(FILE_PATH)
+
+print(f"Scholarship dataset loaded from: {FILE_PATH}")
+print(f"Rows: {len(df)}")
+print(f"Columns: {len(df.columns)}")
 
 
 # ============================================================
