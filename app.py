@@ -184,17 +184,30 @@ def render_link_buttons(row, key_prefix: str):
         st.caption("Official application link not available.")
 
 
+def close_detail():
+    st.session_state["detail_sid"] = None
+
+
+def open_detail(sid: str):
+    st.session_state["detail_sid"] = sid
+
+
 def go_find():
+    st.session_state["detail_sid"] = None
     st.session_state["page"] = "Find Scholarships"
 
 
 def go(page_name: str):
     """Navigate to another page (used as a button callback)."""
+    st.session_state["detail_sid"] = None
     st.session_state["page"] = page_name
 
 
 def go_back():
-    """Return to the previously visited page."""
+    """Close an open details view, otherwise return to the previous page."""
+    if st.session_state.get("detail_sid"):
+        st.session_state["detail_sid"] = None
+        return
     history = st.session_state.get("history", [])
     if history:
         target = history.pop()
@@ -568,10 +581,10 @@ with st.sidebar:
         key="back_side",
         use_container_width=True,
         on_click=go_back,
-        disabled=not st.session_state.get("history"),
+        disabled=not (st.session_state.get("history") or st.session_state.get("detail_sid")),
     )
 
-    st.radio("Navigate", NAV, key="page", label_visibility="collapsed")
+    st.radio("Navigate", NAV, key="page", label_visibility="collapsed", on_change=close_detail)
 
     ui(
         f"""
@@ -592,12 +605,12 @@ with st.sidebar:
 
 page = st.session_state.get("page", "Home")
 
-if page != "Home":
+if page != "Home" or st.session_state.get("detail_sid"):
     st.button(
         "\u2190 Back",
         key="back_main",
         on_click=go_back,
-        disabled=not st.session_state.get("history"),
+        disabled=not (st.session_state.get("history") or st.session_state.get("detail_sid")),
     )
 
 
@@ -605,7 +618,86 @@ if page != "Home":
 # HOME
 # ============================================================
 
-if page == "Home":
+if st.session_state.get("detail_sid"):
+
+    detail_sid = st.session_state["detail_sid"]
+    match = df[df[SID_COL].astype(str).str.strip() == detail_sid]
+
+    if match.empty:
+
+        ui(
+            """
+            <div class="note-strip" style="background:var(--peach);">
+                <span class="hand">oops</span>
+                <span>Could not find this scholarship. Go back and try again.</span>
+            </div>
+            """
+        )
+
+    else:
+
+        row = match.iloc[0]
+
+        page_header(
+            "scholarship details",
+            esc(row.get("scholarship_name")),
+            esc(row.get("scheme_type"), ""),
+        )
+
+        key_fields = [
+            ("benefit", "benefit"),
+            ("closing date", "closing_date"),
+            ("state", "state"),
+            ("education level", "education_level"),
+            ("category", "category"),
+        ]
+
+        boxes = "".join(
+            f'<div class="info-box"><div class="lbl">{label}</div>'
+            f'<div class="val">{esc(row.get(col))}</div></div>'
+            for label, col in key_fields
+            if col in df.columns
+        )
+
+        with card("card-detail-main"):
+            ui(f'<div class="info-grid">{boxes}</div>')
+            render_link_buttons(row, key_prefix="detail")
+            save_btn(row, key="save_detail")
+
+        skip = {col for _, col in key_fields} | {
+            "scholarship_name", "scheme_type", "scholarship_id",
+            "official_url", "official_website", "application_link",
+        }
+
+        rest = [
+            (col, row[col])
+            for col in df.columns
+            if col not in skip and esc(row[col], "") != ""
+        ]
+
+        if rest:
+
+            more = "".join(
+                f'<div class="info-box"><div class="lbl">{esc(str(col).replace("_", " ").lower())}</div>'
+                f'<div class="val">{esc(value)}</div></div>'
+                for col, value in rest
+            )
+
+            with card("card-detail-more"):
+                ui('<div class="m-name" style="margin-bottom:14px;">More details</div>')
+                ui(f'<div class="info-grid">{more}</div>')
+
+        ui(
+            """
+            <div class="note-strip">
+                <span class="hand">heads up</span>
+                <span>Always verify the eligibility and dates on the official website before applying.</span>
+            </div>
+            """
+        )
+
+
+elif page == "Home":
 
     ui(
         """
@@ -978,6 +1070,7 @@ elif page == "Find Scholarships":
                                 """
                             )
 
+                    st.button("View details", key=f"detail_match_{i}", on_click=open_detail, args=(sid_of(row),))
                     render_link_buttons(row, key_prefix=f"match_{i}")
                     save_btn(row, key=f"save_match_{i}")
 
@@ -1100,6 +1193,7 @@ elif page == "Explore":
                         if url.startswith("http"):
                             link_btn("View official source", url, key=f"view_{idx}")
 
+                        st.button("View details", key=f"detail_explore_{idx}", on_click=open_detail, args=(sid_of(row),))
                         save_btn(row, key=f"save_explore_{idx}")
 
         if len(filtered) > limit:
@@ -1183,7 +1277,7 @@ elif page == "Deadline Radar":
 
     last_month = None
 
-    for _, row in rows.iterrows():
+    for n, (_, row) in enumerate(rows.iterrows()):
 
         date = row["closing_date"]
         days = int(row["days_left"])
@@ -1220,6 +1314,8 @@ elif page == "Deadline Radar":
             </div>
             """
         )
+
+        st.button("View details", key=f"detail_dl_{n}", on_click=open_detail, args=(sid_of(row),))
 
 
 # ============================================================
@@ -1270,6 +1366,7 @@ elif page == "Saved":
                     """
                 )
 
+                st.button("View details", key=f"detail_saved_{i}", on_click=open_detail, args=(sid_of(row),))
                 render_link_buttons(row, key_prefix=f"saved_{i}")
                 save_btn(row, key=f"unsave_{i}")
 
