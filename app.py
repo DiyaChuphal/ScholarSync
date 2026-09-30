@@ -193,6 +193,28 @@ def go(page_name: str):
     st.session_state["page"] = page_name
 
 
+def go_back():
+    """Return to the previously visited page."""
+    history = st.session_state.get("history", [])
+    if history:
+        target = history.pop()
+        st.session_state["page"] = target
+        st.session_state["_last_page"] = target
+
+
+def track_history():
+    """Remember visited pages so the Back button knows where to go."""
+    current = st.session_state.get("page", "Home")
+    last = st.session_state.get("_last_page")
+    history = st.session_state.setdefault("history", [])
+    if last is None:
+        st.session_state["_last_page"] = current
+    elif last != current:
+        history.append(last)
+        del history[:-20]
+        st.session_state["_last_page"] = current
+
+
 # ---------- saved scholarships (kept in session state) ----------
 
 SID_COL = "scholarship_id" if "scholarship_id" in df.columns else "scholarship_name"
@@ -534,10 +556,20 @@ st.markdown(CSS, unsafe_allow_html=True)
 # SIDEBAR
 # ============================================================
 
+track_history()
+
 with st.sidebar:
 
     ui('<div class="logo">ScholarSync</div>')
     ui('<div class="side-tag">find money for your degree</div>')
+
+    st.button(
+        "\u2190 Back",
+        key="back_side",
+        use_container_width=True,
+        on_click=go_back,
+        disabled=not st.session_state.get("history"),
+    )
 
     st.radio("Navigate", NAV, key="page", label_visibility="collapsed")
 
@@ -559,6 +591,14 @@ with st.sidebar:
     )
 
 page = st.session_state.get("page", "Home")
+
+if page != "Home":
+    st.button(
+        "\u2190 Back",
+        key="back_main",
+        on_click=go_back,
+        disabled=not st.session_state.get("history"),
+    )
 
 
 # ============================================================
