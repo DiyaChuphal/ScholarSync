@@ -37,7 +37,15 @@ if not DATA_PATH.exists():
     st.error(f"Dataset not found. Put one of these next to app.py: {', '.join(_CANDIDATES)}")
     st.stop()
 
-NAV = ["Home", "Find Scholarships", "Explore", "Deadline Radar"]
+NAV = [
+    "Home",
+    "Find Scholarships",
+    "Explore",
+    "Deadline Radar",
+    "Saved",
+    "Documents Checklist",
+    "About",
+]
 PASTELS = ["lav", "mint", "peach", "butter", "sky", "pink"]
 
 
@@ -178,6 +186,35 @@ def render_link_buttons(row, key_prefix: str):
 
 def go_find():
     st.session_state["page"] = "Find Scholarships"
+
+
+def go(page_name: str):
+    """Navigate to another page (used as a button callback)."""
+    st.session_state["page"] = page_name
+
+
+# ---------- saved scholarships (kept in session state) ----------
+
+SID_COL = "scholarship_id" if "scholarship_id" in df.columns else "scholarship_name"
+
+
+def sid_of(row) -> str:
+    return str(row.get(SID_COL)).strip()
+
+
+def toggle_save(sid: str):
+    saved = st.session_state.setdefault("saved", set())
+    saved.symmetric_difference_update({sid})
+
+
+def save_btn(row, key: str):
+    is_saved = sid_of(row) in st.session_state.get("saved", set())
+    st.button(
+        "\u2605 Saved" if is_saved else "\u2606 Save",
+        key=key,
+        on_click=toggle_save,
+        args=(sid_of(row),),
+    )
 
 
 def page_header(kicker: str, title: str, sub: str = ""):
@@ -582,6 +619,13 @@ if page == "Home":
         on_click=go_find,
     )
 
+    # Quick-jump buttons
+    q1, q2, q3, q4 = st.columns(4)
+    q1.button("Explore all", use_container_width=True, on_click=go, args=("Explore",))
+    q2.button("Deadline Radar", use_container_width=True, on_click=go, args=("Deadline Radar",))
+    q3.button("My saved", use_container_width=True, on_click=go, args=("Saved",))
+    q4.button("Documents checklist", use_container_width=True, on_click=go, args=("Documents Checklist",))
+
     st.write("")
 
     stats = [
@@ -895,6 +939,7 @@ elif page == "Find Scholarships":
                             )
 
                     render_link_buttons(row, key_prefix=f"match_{i}")
+                    save_btn(row, key=f"save_match_{i}")
 
 
 # ============================================================
@@ -1015,6 +1060,8 @@ elif page == "Explore":
                         if url.startswith("http"):
                             link_btn("View official source", url, key=f"view_{idx}")
 
+                        save_btn(row, key=f"save_explore_{idx}")
+
         if len(filtered) > limit:
 
             def show_more():
@@ -1132,6 +1179,118 @@ elif page == "Deadline Radar":
                 <span class="badge bg-{colour}">{chip_text}</span>
             </div>
             """
+        )
+
+
+# ============================================================
+# SAVED
+# ============================================================
+
+elif page == "Saved":
+
+    page_header(
+        "your bookmarks",
+        "Saved scholarships.",
+        "Saved items last until you close or refresh the tab.",
+    )
+
+    saved = st.session_state.get("saved", set())
+    saved_rows = df[df[SID_COL].astype(str).str.strip().isin(saved)]
+
+    if saved_rows.empty:
+
+        ui(
+            """
+            <div class="note-strip">
+                <span class="hand">empty</span>
+                <span>Nothing saved yet. Tap \u2606 Save on any scholarship.</span>
+            </div>
+            """
+        )
+
+    else:
+
+        st.button(
+            "Clear all saved",
+            on_click=lambda: st.session_state.update(saved=set()),
+        )
+
+        st.write("")
+
+        for i, (_, row) in enumerate(saved_rows.iterrows()):
+
+            with card(f"card-saved-{i}"):
+
+                ui(
+                    f"""
+                    <div class="m-name">{esc(row["scholarship_name"])}</div>
+                    <div class="m-meta">{esc(row["scheme_type"])} | {esc(row["state"])}</div>
+                    <div class="e-row"><b>Benefit:</b> {esc(row["benefit"])}</div>
+                    <div class="e-row" style="margin-bottom:14px;"><b>Closing:</b> {esc(row["closing_date"])}</div>
+                    """
+                )
+
+                render_link_buttons(row, key_prefix=f"saved_{i}")
+                save_btn(row, key=f"unsave_{i}")
+
+
+# ============================================================
+# DOCUMENTS CHECKLIST
+# ============================================================
+
+elif page == "Documents Checklist":
+
+    page_header(
+        "get ready",
+        "Documents checklist.",
+        "Common documents needed for Indian scholarships. Tick what you have.",
+    )
+
+    docs = [
+        "Aadhaar card",
+        "Income certificate",
+        "Caste / category certificate",
+        "Domicile certificate",
+        "Previous marksheets",
+        "Admission / fee receipt",
+        "Bank passbook (Aadhaar-linked)",
+        "Passport-size photo",
+        "Disability certificate (if PWD)",
+    ]
+
+    with card("card-docs"):
+        done = sum(st.checkbox(d, key=f"doc_{n}") for n, d in enumerate(docs))
+
+    st.progress(done / len(docs), text=f"{done} of {len(docs)} ready")
+
+    ui(
+        """
+        <div class="note-strip">
+            <span class="hand">tip</span>
+            <span>Requirements differ by scheme. Confirm the exact list on the official website.</span>
+        </div>
+        """
+    )
+
+
+# ============================================================
+# ABOUT
+# ============================================================
+
+elif page == "About":
+
+    page_header(
+        "about",
+        "How ScholarSync works.",
+        "Matching is rule-based and transparent.",
+    )
+
+    with card("card-about"):
+        st.markdown(
+            "- Checks 6 factors: education, state, category, gender, income, course\n"
+            "- Unknown criteria are marked **Needs verification**, never assumed\n"
+            "- Data comes from the CSV; links are for reference only\n"
+            "- Always confirm on the official website before applying"
         )
 
 
